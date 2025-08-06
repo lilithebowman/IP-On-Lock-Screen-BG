@@ -1,0 +1,111 @@
+name: Build and Release
+
+on:
+  # Trigger on version tags
+  push:
+    tags:
+      - 'v*'
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+        
+    - name: Restore dependencies
+      run: dotnet restore IPLockScreenService.csproj
+      
+    - name: Build main service
+      run: dotnet publish IPLockScreenService.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+      
+    - name: Build test runner
+      run: dotnet publish TestRunner.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o bin\test
+      
+    - name: Create release directory
+      run: |
+        mkdir release
+        Copy-Item "bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe" "release\"
+        Copy-Item "bin\test\TestRunner.exe" "release\"
+        Copy-Item "README.md" "release\"
+        Copy-Item "install-service.bat" "release\"
+        Copy-Item "uninstall-service.bat" "release\"
+        Copy-Item "service-manager.ps1" "release\"
+        Copy-Item "appsettings.json" "release\"
+      shell: powershell
+      
+    - name: Create ZIP archive
+      run: |
+        Compress-Archive -Path "release\*" -DestinationPath "IP-Lock-Screen-BG-${{ github.ref_name }}.zip"
+      shell: powershell
+      
+    - name: Get version from tag
+      id: get_version
+      run: |
+        if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+          $version = "${{ github.event.inputs.version }}"
+        } else {
+          $version = "${{ github.ref_name }}"
+        }
+        echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+      shell: powershell
+      
+    - name: Create Release
+      uses: actions/create-release@v1
+      id: create_release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.outputs.VERSION }}
+        release_name: IP Lock Screen Background Service ${{ steps.get_version.outputs.VERSION }}
+        body: |
+          ## IP Lock Screen Background Service ${{ steps.get_version.outputs.VERSION }}
+          
+          A Windows service that automatically updates the Windows lock screen background with current network configuration information.
+          
+          ### What's Included
+          - `IPLockScreenService.exe` - Main service executable
+          - `TestRunner.exe` - Test runner for manual testing
+          - `install-service.bat` - Service installation script (run as administrator)
+          - `uninstall-service.bat` - Service removal script (run as administrator)
+          - `service-manager.ps1` - PowerShell service management script
+          - `appsettings.json` - Configuration file
+          - `README.md` - Documentation
+          
+          ### Installation
+          1. Extract all files to a directory
+          2. Right-click `install-service.bat` and select "Run as administrator"
+          3. The service will be installed and started automatically
+          
+          ### Requirements
+          - Windows 10/11
+          - Administrator privileges for installation
+          - .NET 8.0 Runtime (included in self-contained deployment)
+          
+          ### Changes
+          See the commit history for detailed changes in this release.
+        draft: false
+        prerelease: false
+        
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./IP-Lock-Screen-BG-${{ steps.get_version.outputs.VERSION }}.zip
+        asset_name: IP-Lock-Screen-BG-${{ steps.get_version.outputs.VERSION }}.zip
+        asset_content_type: application/zip
