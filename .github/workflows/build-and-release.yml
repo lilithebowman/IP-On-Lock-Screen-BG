@@ -50,11 +50,6 @@ jobs:
         Copy-Item "appsettings.json" "release\"
       shell: powershell
       
-    - name: Create ZIP archive
-      run: |
-        Compress-Archive -Path "release\*" -DestinationPath "IP-Lock-Screen-BG-${{ github.ref_name }}.zip"
-      shell: powershell
-      
     - name: Get version from tag
       id: get_version
       run: |
@@ -66,38 +61,43 @@ jobs:
         echo "VERSION=$version" >> $env:GITHUB_OUTPUT
       shell: powershell
       
-    - name: Create Release
+    - name: Create ZIP archive
       run: |
         $version = "${{ steps.get_version.outputs.VERSION }}"
-        $releaseNotes = @"
-        ## IP Lock Screen Background Service $version
-        
-        A Windows service that automatically updates the Windows lock screen background with current network configuration information.
-        
-        ### What's Included
-        - ``IPLockScreenService.exe`` - Main service executable
-        - ``TestRunner.exe`` - Test runner for manual testing
-        - ``install-service.bat`` - Service installation script (run as administrator)
-        - ``uninstall-service.bat`` - Service removal script (run as administrator)
-        - ``service-manager.ps1`` - PowerShell service management script
-        - ``appsettings.json`` - Configuration file
-        - ``README.md`` - Documentation
-        
-        ### Installation
-        1. Extract all files to a directory
-        2. Right-click ``install-service.bat`` and select "Run as administrator"
-        3. The service will be installed and started automatically
-        
-        ### Requirements
-        - Windows 10/11
-        - Administrator privileges for installation
-        - .NET 8.0 Runtime (included in self-contained deployment)
-        
-        ### Changes
-        See the commit history for detailed changes in this release.
-        "@
-        
-        gh release create $version "IP-Lock-Screen-BG-$version.zip" --title "IP Lock Screen Background Service $version" --notes $releaseNotes
+        Compress-Archive -Path "release\*" -DestinationPath "IP-Lock-Screen-BG-$version.zip"
       shell: powershell
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.get_version.outputs.VERSION }}
+        name: IP Lock Screen Background Service ${{ steps.get_version.outputs.VERSION }}
+        body: |
+          ## IP Lock Screen Background Service ${{ steps.get_version.outputs.VERSION }}
+          
+          A Windows service that automatically updates the Windows lock screen background with current network configuration information.
+          
+          ### What's Included
+          - `IPLockScreenService.exe` - Main service executable
+          - `TestRunner.exe` - Test runner for manual testing
+          - `install-service.bat` - Service installation script (run as administrator)
+          - `uninstall-service.bat` - Service removal script (run as administrator)
+          - `service-manager.ps1` - PowerShell service management script
+          - `appsettings.json` - Configuration file
+          - `README.md` - Documentation
+          
+          ### Installation
+          1. Extract all files to a directory
+          2. Right-click `install-service.bat` and select "Run as administrator"
+          3. The service will be installed and started automatically
+          
+          ### Requirements
+          - Windows 10/11
+          - Administrator privileges for installation
+          - .NET 8.0 Runtime (included in self-contained deployment)
+          
+          ### Changes
+          See the commit history for detailed changes in this release.
+        files: IP-Lock-Screen-BG-${{ steps.get_version.outputs.VERSION }}.zip
+        draft: false
+        prerelease: false
