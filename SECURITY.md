@@ -73,11 +73,48 @@ dotnet publish IPLockScreenService.csproj -c Release -r win-x64 --self-contained
 
 If you fork this project and want to avoid these warnings:
 
-1. Purchase a code signing certificate from a trusted CA
-2. Add these secrets to your GitHub repository:
-   - `CERTIFICATE_BASE64`: Base64-encoded certificate file
-   - `CERTIFICATE_PASSWORD`: Certificate password
-3. The GitHub Actions workflow will automatically sign the executables
+### Option 1: Purchase a Code Signing Certificate (Recommended)
+
+1. **Purchase a certificate** from a trusted CA:
+   - DigiCert (~$474/year)
+   - Sectigo (~$315/year)
+   - GlobalSign (~$299/year)
+   - SSL.com (~$239/year)
+
+2. **Convert certificate to Base64**:
+
+   ```powershell
+   $certBytes = [System.IO.File]::ReadAllBytes("path\to\your\certificate.p12")
+   $certBase64 = [System.Convert]::ToBase64String($certBytes)
+   $certBase64 | Out-File "certificate_base64.txt"
+   ```
+
+3. **Add GitHub Secrets**:
+   - Go to repository Settings → Secrets and variables → Actions
+   - Add these secrets:
+     - `CERTIFICATE_BASE64`: Paste the Base64 content
+     - `CERTIFICATE_PASSWORD`: Your certificate password
+
+4. The GitHub Actions workflow will automatically sign your executables
+
+### Option 2: Self-Signed Certificate (Development Only)
+
+For testing purposes, you can use a self-signed certificate:
+
+1. **Add GitHub Variable**:
+   - Go to repository Settings → Secrets and variables → Actions → Variables tab
+   - Add variable: `USE_SELF_SIGNED` = `true`
+
+2. The workflow will create and use a self-signed certificate
+   - ⚠️ **Note**: Self-signed certificates still trigger Windows warnings
+   - Only useful for testing the signing process
+
+### Option 3: Free Certificate (Limited)
+
+SSL.com offers free 90-day code signing certificates for open source projects:
+
+- Apply at: <https://www.ssl.com/certificates/free/>
+- Limited validity but works for testing
 
 ## Reporting False Positives
 

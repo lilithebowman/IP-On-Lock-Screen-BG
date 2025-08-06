@@ -52,25 +52,68 @@ jobs:
           # Sign main service
           if (Test-Path "bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe") {
             & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $certPath /p $env:CERTIFICATE_PASSWORD /t http://timestamp.digicert.com /fd SHA256 "bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe"
-            Write-Host "Signed IPLockScreenService.exe"
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ Successfully signed IPLockScreenService.exe"
+            } else {
+              Write-Host "❌ Failed to sign IPLockScreenService.exe"
+            }
           }
           
           # Sign test runner
           if (Test-Path "bin\test\TestRunner.exe") {
             & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $certPath /p $env:CERTIFICATE_PASSWORD /t http://timestamp.digicert.com /fd SHA256 "bin\test\TestRunner.exe"
-            Write-Host "Signed TestRunner.exe"
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ Successfully signed TestRunner.exe"
+            } else {
+              Write-Host "❌ Failed to sign TestRunner.exe"
+            }
           }
           
           # Clean up certificate file
           Remove-Item $certPath -Force
+        } elseif ($env:USE_SELF_SIGNED -eq "true") {
+          Write-Host "Creating self-signed certificate for development..."
+          
+          # Create self-signed certificate
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=IP Lock Screen Service" -KeyAlgorithm RSA -KeyLength 2048 -Provider "Microsoft Enhanced RSA and AES Cryptographic Provider" -KeyExportPolicy Exportable -KeyUsage DigitalSignature -ValidityPeriod Years -ValidityPeriodUnits 3 -CertStoreLocation "Cert:\CurrentUser\My"
+          
+          # Export certificate
+          $certPath = "self-signed-cert.p12"
+          $certPassword = ConvertTo-SecureString -String "temp123" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath $certPath -Password $certPassword
+          
+          # Sign executables
+          if (Test-Path "bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe") {
+            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $certPath /p "temp123" /t http://timestamp.digicert.com /fd SHA256 "bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe"
+            Write-Host "⚠️ Self-signed IPLockScreenService.exe (not trusted by Windows)"
+          }
+          
+          if (Test-Path "bin\test\TestRunner.exe") {
+            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $certPath /p "temp123" /t http://timestamp.digicert.com /fd SHA256 "bin\test\TestRunner.exe"
+            Write-Host "⚠️ Self-signed TestRunner.exe (not trusted by Windows)"
+          }
+          
+          # Clean up
+          Remove-Item $certPath -Force
+          Remove-Item -Path "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force
         } else {
           Write-Host "No code signing certificate available, skipping signing..."
-          Write-Host "To enable code signing, add CERTIFICATE_BASE64 and CERTIFICATE_PASSWORD secrets to your repository"
+          Write-Host ""
+          Write-Host "📋 To enable code signing:"
+          Write-Host "   Option 1 (Recommended): Purchase a certificate from a trusted CA"
+          Write-Host "   - Add CERTIFICATE_BASE64 and CERTIFICATE_PASSWORD secrets"
+          Write-Host ""
+          Write-Host "   Option 2 (Development): Use self-signed certificate"
+          Write-Host "   - Add USE_SELF_SIGNED=true as a repository variable"
+          Write-Host ""
+          Write-Host "   Option 3: Free certificate from SSL.com (limited)"
+          Write-Host "   - Get a free 90-day certificate from SSL.com"
         }
       shell: powershell
       env:
         CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
         CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        USE_SELF_SIGNED: ${{ vars.USE_SELF_SIGNED }}
       
     - name: Create release directory
       run: |
