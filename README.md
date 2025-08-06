@@ -76,3 +76,5 @@ The service requires:
 - `IPLockScreenService.csproj` - Project file with dependencies
 - `install-service.bat` - Service installation script
 - `uninstall-service.bat` - Service removal script
+
+[![Build and Release](https://github.com/lilithebowman/IP-On-Lock-Screen-BG/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/lilithebowman/IP-On-Lock-Screen-BG/actions/workflows/build-and-release.yml)
