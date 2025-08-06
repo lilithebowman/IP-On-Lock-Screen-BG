@@ -38,12 +38,47 @@ jobs:
     - name: Build test runner
       run: dotnet publish TestRunner.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o bin\test
       
+    - name: Sign executables (if certificate available)
+      run: |
+        # Check if code signing certificate is available
+        if ($env:CERTIFICATE_BASE64 -and $env:CERTIFICATE_PASSWORD) {
+          Write-Host "Code signing certificate found, signing executables..."
+          
+          # Decode certificate
+          $certBytes = [Convert]::FromBase64String($env:CERTIFICATE_BASE64)
+          $certPath = "certificate.p12"
+          [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+          
+          # Sign main service
+          if (Test-Path "bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe") {
+            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $certPath /p $env:CERTIFICATE_PASSWORD /t http://timestamp.digicert.com /fd SHA256 "bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe"
+            Write-Host "Signed IPLockScreenService.exe"
+          }
+          
+          # Sign test runner
+          if (Test-Path "bin\test\TestRunner.exe") {
+            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $certPath /p $env:CERTIFICATE_PASSWORD /t http://timestamp.digicert.com /fd SHA256 "bin\test\TestRunner.exe"
+            Write-Host "Signed TestRunner.exe"
+          }
+          
+          # Clean up certificate file
+          Remove-Item $certPath -Force
+        } else {
+          Write-Host "No code signing certificate available, skipping signing..."
+          Write-Host "To enable code signing, add CERTIFICATE_BASE64 and CERTIFICATE_PASSWORD secrets to your repository"
+        }
+      shell: powershell
+      env:
+        CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
+        CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+      
     - name: Create release directory
       run: |
         mkdir release
         Copy-Item "bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe" "release\"
         Copy-Item "bin\test\TestRunner.exe" "release\"
         Copy-Item "README.md" "release\"
+        Copy-Item "SECURITY.md" "release\"
         Copy-Item "install-service.bat" "release\"
         Copy-Item "uninstall-service.bat" "release\"
         Copy-Item "service-manager.ps1" "release\"
@@ -76,6 +111,14 @@ jobs:
           ## IP Lock Screen Background Service ${{ steps.get_version.outputs.VERSION }}
           
           A Windows service that automatically updates the Windows lock screen background with current network configuration information.
+          
+          > **Note**: This software is open source and the executables are built using GitHub Actions. Windows may show security warnings because the executables are not code-signed. You can safely allow/unblock the files after download.
+          
+          ### Security Information
+          - Source code is publicly available at: https://github.com/lilithebowman/IP-On-Lock-Screen-BG
+          - Built using GitHub Actions for transparency
+          - Self-contained .NET 8.0 executables (no external dependencies)
+          - No network communication except for local IP configuration gathering
           
           ### What's Included
           - `IPLockScreenService.exe` - Main service executable
