@@ -50,8 +50,12 @@ public class Worker : BackgroundService
 			// Get IP configuration information
 			var ipInfo = await GetIPConfigurationInfo();
 
+			// Log the ipInfo to the console
+			_logger.LogInformation("IP Configuration Information: {ipInfo}", ipInfo);
+
 			// Create background image with IP information
-			var imagePath = await CreateBackgroundImage(ipInfo);
+			var tempPath = Path.Combine(Path.GetTempPath(), "ip_lockscreen_bg.png");
+			var imagePath = await NetworkImageRenderer.CreateBackgroundImage(ipInfo, tempPath);
 
 			// Set as lock screen background
 			await SetLockScreenBackground(imagePath);
@@ -67,21 +71,22 @@ public class Worker : BackgroundService
 	{
 		try
 		{
+			// Run ipconfig /all > ipconfig-output.txt
+			var ipconfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ipconfig-output.txt");
 			var processInfo = new ProcessStartInfo
 			{
-				FileName = "ipconfig",
-				Arguments = "/all",
-				RedirectStandardOutput = true,
+				FileName = "cmd.exe",
+				Arguments = $"/c ipconfig /all > \"{ipconfigPath}\"",
+				RedirectStandardOutput = false,
 				UseShellExecute = false,
 				CreateNoWindow = true
 			};
+			using (var process = Process.Start(processInfo))
+			{
+				await process.WaitForExitAsync();
+			}
 
-			using var process = Process.Start(processInfo);
-			if (process == null)
-				throw new InvalidOperationException("Failed to start ipconfig process");
-
-			var output = await process.StandardOutput.ReadToEndAsync();
-			await process.WaitForExitAsync();
+			string output = await File.ReadAllTextAsync(ipconfigPath);
 
 			// Also get additional network information
 			var additionalInfo = GetNetworkAdapterInfo();
@@ -101,24 +106,66 @@ public class Worker : BackgroundService
 		{
 			var info = new List<string>();
 
-			using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = true");
-			foreach (ManagementObject obj in searcher.Get())
+			// Get all network adapters with IPEnabled = true
+			using var configSearcher = new ManagementObjectSearcher("SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = true");
+			var configs = configSearcher.Get().Cast<ManagementObject>().ToList();
+
+			// Get all network adapters for connection status
+			using var adapterSearcher = new ManagementObjectSearcher("SELECT * FROM Win32_NetworkAdapter");
+			var adapters = adapterSearcher.Get().Cast<ManagementObject>().ToList();
+
+			foreach (var obj in configs)
 			{
 				var description = obj["Description"]?.ToString() ?? "Unknown";
 				var ipAddresses = obj["IPAddress"] as string[];
 				var subnetMasks = obj["IPSubnet"] as string[];
 				var gateways = obj["DefaultIPGateway"] as string[];
 				var dhcpEnabled = obj["DHCPEnabled"]?.ToString() ?? "Unknown";
+				var settingId = obj["SettingID"]?.ToString();
 
-				info.Add($"Adapter: {description}");
+				// Find the corresponding adapter for connection status
+				var adapter = adapters.FirstOrDefault(a => a["GUID"]?.ToString() == settingId);
+				var netConnectionStatus = adapter?["NetConnectionStatus"] as ushort?;
+				// NetConnectionStatus == 2 means 'Connected'
+				bool isConnected = netConnectionStatus == 2;
+
+				// Validate at least one valid IPv4 address
+				bool hasValidIp = false;
 				if (ipAddresses != null)
-					info.Add($"  IP Addresses: {string.Join(", ", ipAddresses)}");
-				if (subnetMasks != null)
-					info.Add($"  Subnet Masks: {string.Join(", ", subnetMasks)}");
-				if (gateways != null)
-					info.Add($"  Gateways: {string.Join(", ", gateways)}");
-				info.Add($"  DHCP Enabled: {dhcpEnabled}");
-				info.Add("");
+				{
+					foreach (var ip in ipAddresses)
+					{
+						if (System.Net.IPAddress.TryParse(ip, out var addr))
+						{
+							if (addr.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+								!ip.StartsWith("169.254.") && // Exclude APIPA
+								!ip.StartsWith("127.") &&      // Exclude loopback
+								!string.IsNullOrWhiteSpace(ip))
+							{
+								hasValidIp = true;
+								break;
+							}
+						}
+					}
+				}
+
+				if (isConnected && hasValidIp)
+				{
+					info.Add($"Adapter: {description}");
+					if (ipAddresses != null)
+						info.Add($"  IP Addresses: {string.Join(", ", ipAddresses)}");
+					if (subnetMasks != null)
+						info.Add($"  Subnet Masks: {string.Join(", ", subnetMasks)}");
+					if (gateways != null)
+						info.Add($"  Gateways: {string.Join(", ", gateways)}");
+					info.Add($"  DHCP Enabled: {dhcpEnabled}");
+					info.Add("");
+				}
+			}
+
+			if (info.Count == 0)
+			{
+				info.Add("No connected adapters with a valid IP address found.");
 			}
 
 			return string.Join("\n", info);
@@ -160,38 +207,9 @@ public class Worker : BackgroundService
 			graphics.FillEllipse(accentBrush, width - 300, -100, 400, 400);
 			graphics.FillEllipse(accentBrush, -100, height - 300, 400, 400);
 
-			// Prepare text
+			// Prepare text: show all lines
 			var lines = ipInfo.Split('\n');
-			var displayLines = new List<string>();
-
-			// Filter and format the most important information
-			foreach (var line in lines)
-			{
-				var trimmedLine = line.Trim();
-				if (string.IsNullOrWhiteSpace(trimmedLine) ||
-					trimmedLine.Contains("Media State") ||
-					trimmedLine.Contains("Connection-specific DNS Suffix") ||
-					trimmedLine.Contains("Description") ||
-					trimmedLine.Contains("Physical Address") ||
-					trimmedLine.Contains("DHCP Enabled") ||
-					trimmedLine.Contains("Autoconfiguration Enabled") ||
-					trimmedLine.Contains("Link-local IPv6 Address") ||
-					trimmedLine.Contains("IPv4 Address") ||
-					trimmedLine.Contains("Subnet Mask") ||
-					trimmedLine.Contains("Default Gateway") ||
-					trimmedLine.Contains("DNS Servers") ||
-					trimmedLine.Contains("Network Configuration") ||
-					trimmedLine.Contains("Adapter:") ||
-					trimmedLine.Contains("IP Addresses:") ||
-					trimmedLine.Contains("Gateways:"))
-				{
-					displayLines.Add(trimmedLine);
-				}
-
-				// Limit the number of lines to prevent overflow
-				if (displayLines.Count > 30)
-					break;
-			}
+			var displayLines = lines.Select(l => l.TrimEnd('\r')).ToList();
 
 			// Draw text
 			using var titleFont = new Font("Segoe UI", 24, FontStyle.Bold);
@@ -208,17 +226,44 @@ public class Worker : BackgroundService
 			graphics.DrawString("Network Configuration", titleFont, textBrush, x, y);
 			y += 50;
 
-			// Draw IP information with shadow
-			foreach (var line in displayLines.Take(25))
+			// Draw IP information in two columns, filling the first column vertically, then continuing in the second column
+			float col1x = x;
+			float col2x = width / 2f + 20f;
+			float coly = y;
+			bool inSecondCol = false;
+			int linesDrawn = 0;
+			for (int i = 0; i < displayLines.Count && linesDrawn < 60; i++)
 			{
+				var line = displayLines[i];
 				if (!string.IsNullOrWhiteSpace(line))
 				{
-					graphics.DrawString(line, textFont, shadowBrush, x + 1, y + 1);
-					graphics.DrawString(line, textFont, textBrush, x, y);
+					if (!inSecondCol)
+					{
+						graphics.DrawString(line, textFont, shadowBrush, col1x + 1, coly + 1);
+						graphics.DrawString(line, textFont, textBrush, col1x, coly);
+					}
+					else
+					{
+						graphics.DrawString(line, textFont, shadowBrush, col2x + 1, coly + 1);
+						graphics.DrawString(line, textFont, textBrush, col2x, coly);
+					}
 				}
-				y += lineHeight;
-
-				if (y > height - 100) break; // Prevent overflow
+				coly += lineHeight;
+				linesDrawn++;
+				if (coly > height - 100)
+				{
+					if (!inSecondCol)
+					{
+						// Move to second column
+						inSecondCol = true;
+						coly = y;
+					}
+					else
+					{
+						// No more space
+						break;
+					}
+				}
 			}
 
 			// Save the image
