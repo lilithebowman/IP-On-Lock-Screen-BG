@@ -35,7 +35,7 @@ function Install-Service {
 
 	Build-Project
     
-	$ExePath = Join-Path $PSScriptRoot "bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe"
+	$ExePath = Join-Path $PSScriptRoot "bin\Release\net6.0-windows\win-x64\publish\IPLockScreenService.exe"
     
 	if (-not (Test-Path $ExePath)) {
 		Write-Host "Executable not found at: $ExePath" -ForegroundColor Red

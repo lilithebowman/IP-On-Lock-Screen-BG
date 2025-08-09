@@ -37,7 +37,7 @@ if %errorlevel% neq 0 (
 echo.
 echo Build completed successfully!
 echo.
-echo Service executable: bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe
+echo Service executable: bin\Release\net6.0-windows\win-x64\publish\IPLockScreenService.exe
 echo Test runner executable: bin\test\TestRunner.exe
 echo.
 echo To install the service, run 'install-service.bat' as administrator.

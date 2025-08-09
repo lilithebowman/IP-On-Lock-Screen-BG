@@ -83,6 +83,8 @@ public class Worker : BackgroundService
 			};
 			using (var process = Process.Start(processInfo))
 			{
+				if (process is null)
+					throw new InvalidOperationException("Failed to start ipconfig process");
 				await process.WaitForExitAsync();
 			}
 
