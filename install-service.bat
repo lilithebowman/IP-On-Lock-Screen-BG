@@ -9,7 +9,7 @@ sc stop "IPLockScreenService" 2>nul
 sc delete "IPLockScreenService" 2>nul
 
 REM Install the service
-sc create "IPLockScreenService" binPath="%~dp0bin\Release\net8.0-windows\win-x64\publish\IPLockScreenService.exe" start=auto DisplayName="IP Lock Screen Background Service" depend=Tcpip
+sc create "IPLockScreenService" binPath="%~dp0bin\Release\net6.0-windows\win-x64\publish\IPLockScreenService.exe" start=auto DisplayName="IP Lock Screen Background Service" depend=Tcpip
 
 REM Set service description
 sc description "IPLockScreenService" "Updates Windows lock screen background with current IP configuration information"

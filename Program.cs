@@ -3,19 +3,17 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-var builder = Host.CreateApplicationBuilder(args);
+// .NET 6 hosting pattern
+IHost host = Host.CreateDefaultBuilder(args)
+	.UseWindowsService(options =>
+	{
+		options.ServiceName = "IP Lock Screen Background Service";
+	})
+	.ConfigureServices(services =>
+	{
+		services.AddHostedService<Worker>();
+		services.AddLogging(configure => configure.AddConsole());
+	})
+	.Build();
 
-// Configure for Windows Service
-builder.Services.AddWindowsService(options =>
-{
-	options.ServiceName = "IP Lock Screen Background Service";
-});
-
-// Add the worker service
-builder.Services.AddHostedService<Worker>();
-
-// Configure logging
-builder.Services.AddLogging(configure => configure.AddConsole());
-
-var host = builder.Build();
 await host.RunAsync();
